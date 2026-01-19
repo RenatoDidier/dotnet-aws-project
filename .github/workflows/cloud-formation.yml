@@ -61,7 +61,7 @@ jobs:
       - name: Build, tag e push
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ec2-api-ecr
+          ECR_REPOSITORY: ec2-api-ecr-v1
           IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build -f ec2-docker/Dockerfile -t $ECR_REPOSITORY:$IMAGE_TAG .
@@ -81,7 +81,7 @@ jobs:
         env:
           AWS_REGION: us-east-1
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ec2-api-ecr
+          ECR_REPOSITORY: ec2-api-ecr-v1
           IMAGE_TAG: ${{ github.sha }}
           INSTANCE_ID: ${{ steps.cf.outputs.instance_id }}
         run: |
@@ -97,9 +97,23 @@ jobs:
               \"sudo usermod -a -G docker ec2-user\",
               \"aws ecr get-login-password --region $AWS_REGION | sudo docker login --username AWS --password-stdin $ECR_REGISTRY\",
               \"sudo docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG\",
-              \"sudo docker stop ec2-api-ecr || true\",
-              \"sudo docker rm ec2-api-ecr || true\",
-              \"sudo docker run -d --restart unless-stopped --name ec2-api-ecr -p 8080:8080 $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG\"
+              \"sudo docker stop ec2-api-ecr-v1 || true\",
+              \"sudo docker rm ec2-api-ecr-v1 || true\",
+              \"sudo docker run -d --restart unless-stopped --name ec2-api-ecr-v1 -p 8080:8080 $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG\"
             ]"
 
+      - name: Dump CloudFormation events on failure
+        if: failure()
+        run: |
+          echo "=== Stack status ==="
+          aws cloudformation describe-stacks \
+            --stack-name ${{ github.event.inputs.stack_name }} \
+            --query "Stacks[0].[StackStatus,StackStatusReason]" \
+            --output table || true
 
+          echo "=== Last stack events ==="
+          aws cloudformation describe-stack-events \
+            --stack-name ${{ github.event.inputs.stack_name }} \
+            --max-items 80 \
+            --query "StackEvents[].[Timestamp,ResourceStatus,LogicalResourceId,ResourceType,ResourceStatusReason]" \
+            --output table || true
