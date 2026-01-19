@@ -1,12 +1,74 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: EC2 + ECR para API .NET 10 em Docker
+Description: EC2 + ECR para API .NET 10 em Docker (VPC/Subnet pública garantida)
 
 Parameters:
-  KeyName:
+  VpcCidr:
     Type: String
-    Description: Key Pair para acesso SSH
+    Default: 10.0.0.0/16
+  PublicSubnetCidr:
+    Type: String
+    Default: 10.0.1.0/24
+  InstanceType:
+    Type: String
+    Default: t3.micro
 
 Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: ec2-api-vpc
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: ec2-api-igw
+
+  AttachIgw:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PublicSubnetCidr
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: ec2-api-public-subnet
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: ec2-api-public-rt
+
+  DefaultRouteToInternet:
+    Type: AWS::EC2::Route
+    DependsOn: AttachIgw
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
   ApiRepository:
     Type: AWS::ECR::Repository
     Properties:
@@ -37,12 +99,9 @@ Resources:
   ApiSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Allow HTTP and SSH
+      VpcId: !Ref Vpc
+      GroupDescription: Allow HTTP to API
       SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
           FromPort: 8080
           ToPort: 8080
@@ -51,16 +110,29 @@ Resources:
   ApiInstance:
     Type: AWS::EC2::Instance
     Properties:
-      InstanceType: t3.micro
-      KeyName: !Ref KeyName
+      InstanceType: !Ref InstanceType
       IamInstanceProfile: !Ref Ec2InstanceProfile
-      SecurityGroupIds:
-        - !Ref ApiSecurityGroup
-      ImageId: ami-0c02fb55956c7d316 
+
+      NetworkInterfaces:
+        - DeviceIndex: 0
+          AssociatePublicIpAddress: true
+          SubnetId: !Ref PublicSubnet
+          GroupSet:
+            - !Ref ApiSecurityGroup
+
+      ImageId: ami-0c02fb55956c7d316
+
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
           yum update -y
+
+          # SSM Agent (garantia)
+          yum install -y amazon-ssm-agent || true
+          systemctl enable amazon-ssm-agent
+          systemctl start amazon-ssm-agent
+
+          # Docker
           amazon-linux-extras install docker -y
           service docker start
           usermod -a -G docker ec2-user
@@ -70,10 +142,18 @@ Outputs:
     Description: URI do ECR
     Value: !GetAtt ApiRepository.RepositoryUri
 
+  InstanceId:
+    Description: InstanceId da EC2
+    Value: !Ref ApiInstance
+
   PublicIP:
     Description: IP público da EC2
     Value: !GetAtt ApiInstance.PublicIp
 
-  InstanceId:
-    Description: InstanceId da EC2
-    Value: !Ref ApiInstance
+  VpcId:
+    Description: VPC criada
+    Value: !Ref Vpc
+
+  PublicSubnetId:
+    Description: Subnet pública criada
+    Value: !Ref PublicSubnet
