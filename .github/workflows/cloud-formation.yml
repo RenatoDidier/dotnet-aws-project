@@ -50,12 +50,14 @@ jobs:
 
       - name: Build Lambda
         run: |
-          dotnet publish -c Release -o publish
+          dotnet publish lambda/Lambda.csproj \
+            -c Release \
+            -o lambda/publish
 
       - name: Zip Lambda
         run: |
-          cd publish
-          zip -r ../lambda.zip .
+          cd lambda/publish
+          zip -r ../../lambda.zip .
 
       - name: Upload Lambda to S3
         run: |
