@@ -1,12 +1,12 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Lambda .NET 8 + HTTP API (GET /items) via CloudFormation
+Description: Lambda .NET 10 + HTTP API
+
+Parameters:
+  LambdaS3Key:
+    Type: String
+    Description: S3 key do zip da Lambda
 
 Resources:
-  LambdaArtifactsBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub "lambda-artifacts-${AWS::AccountId}-${AWS::Region}"
-
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -30,10 +30,8 @@ Resources:
       MemorySize: 256
       Timeout: 10
       Code:
-        ZipFile: |
-          exports.handler = async () => {
-            return { statusCode: 503, body: "Not deployed yet" };
-          };
+        S3Bucket: !ImportValue LambdaArtifactsBucketName
+        S3Key: !Ref LambdaS3Key
 
   HttpApi:
     Type: AWS::ApiGatewayV2::Api

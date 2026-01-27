@@ -42,18 +42,11 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Validate CloudFormation template
-        run: |
-          aws cloudformation validate-template \
-            --template-body file://${{ github.event.inputs.stack_folder }}/template.yml
-
-      - name: Deploy stack
+      - name: Deploy stack S3 Bucker
         run: |
           aws cloudformation deploy \
-            --stack-name ${{ github.event.inputs.stack_name }} \
-            --template-file ${{ github.event.inputs.stack_folder }}/template.yml \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --no-fail-on-empty-changeset
+            --stack-name lambda-s3-stack \
+            --template-file s3-stack.yml
 
       - name: Build Lambda
         run: |
@@ -69,13 +62,14 @@ jobs:
           aws s3 cp lambda.zip \
             s3://lambda-artifacts-${{ secrets.AWS_ACCOUNT_ID }}-${{ env.AWS_REGION }}/lambda-${{ github.sha }}.zip
 
-      - name: Update Lambda code
+      - name: Deploy stack
         run: |
-          aws lambda update-function-code \
-            --function-name lambda-fn \
-            --s3-bucket lambda-artifacts-${{ secrets.AWS_ACCOUNT_ID }}-${{ env.AWS_REGION }} \
-            --s3-key lambda-${{ github.sha }}.zip
-
+          aws cloudformation deploy \
+            --stack-name ${{ github.event.inputs.stack_name }} \
+            --template-file ${{ github.event.inputs.stack_folder }}/lambda-stack.yml \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameter-overrides LambdaS3Key=lambda-${{ github.sha }}.zip \
+            --no-fail-on-empty-changeset
 
       - name: Dump CloudFormation events on failure
         if: failure()

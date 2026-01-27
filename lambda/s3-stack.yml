@@ -1,0 +1,15 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Infra base - S3 para artefatos Lambda
+
+Resources:
+  LambdaArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "lambda-artifacts-${AWS::AccountId}-${AWS::Region}"
+
+Outputs:
+  LambdaArtifactsBucketName:
+    Description: Nome do bucket de artefatos
+    Value: !Ref LambdaArtifactsBucket
+    Export:
+      Name: LambdaArtifactsBucketName
