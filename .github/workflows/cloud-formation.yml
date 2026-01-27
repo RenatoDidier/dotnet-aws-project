@@ -46,7 +46,7 @@ jobs:
         run: |
           aws cloudformation deploy \
             --stack-name lambda-s3-stack \
-            --template-file s3-stack.yml
+            --template-file ${{ github.event.inputs.stack_folder }}/s3-stack.yml
 
       - name: Build Lambda
         run: |
