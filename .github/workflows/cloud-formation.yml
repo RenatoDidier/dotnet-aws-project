@@ -42,6 +42,11 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Get AWS Account ID
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "AWS_ACCOUNT_ID=$ACCOUNT_ID" >> $GITHUB_ENV
+
       - name: Deploy stack S3 Bucker
         run: |
           aws cloudformation deploy \
@@ -62,7 +67,7 @@ jobs:
       - name: Upload Lambda to S3
         run: |
           aws s3 cp lambda.zip \
-            s3://lambda-artifacts-${{ secrets.AWS_ACCOUNT_ID }}-${{ env.AWS_REGION }}/lambda-${{ github.sha }}.zip
+            s3://lambda-artifacts-${{ env.AWS_ACCOUNT_ID }}-${{ env.AWS_REGION }}/lambda-${{ github.sha }}.zip
 
       - name: Deploy stack
         run: |
