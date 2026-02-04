@@ -74,38 +74,71 @@ jobs:
         run: |
           docker compose -f two-ec2-sqs/docker-compose.yml push
 
-      - name: Obter InstanceId do stack
+      - name: Obter InstanceIds do stack
         id: cf
         run: |
-          INSTANCE_ID=$(aws cloudformation describe-stacks \
+          PUBLISHER_ID=$(aws cloudformation describe-stacks \
             --stack-name ${{ github.event.inputs.stack_name }} \
-            --query "Stacks[0].Outputs[?OutputKey=='InstanceId'].OutputValue" \
+            --query "Stacks[0].Outputs[?OutputKey=='PublisherInstanceId'].OutputValue" \
             --output text)
-          echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
 
-      - name: Deploy na EC2 via SSM (pull + restart)
+          CONSUMER_ID=$(aws cloudformation describe-stacks \
+            --stack-name ${{ github.event.inputs.stack_name }} \
+            --query "Stacks[0].Outputs[?OutputKey=='ConsumerInstanceId'].OutputValue" \
+            --output text)
+
+          echo "publisher_id=$PUBLISHER_ID" >> $GITHUB_OUTPUT
+          echo "consumer_id=$CONSUMER_ID" >> $GITHUB_OUTPUT
+
+      - name: Deploy Publisher na EC2
         env:
           AWS_REGION: us-east-1
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ec2-api-ecr-v2
           IMAGE_TAG: ${{ github.sha }}
-          INSTANCE_ID: ${{ steps.cf.outputs.instance_id }}
+          INSTANCE_ID: ${{ steps.cf.outputs.publisher_id }}
+          SQS_URL: ${{ steps.cf.outputs.sqs_queue_url }} 
         run: |
           aws ssm send-command \
             --region $AWS_REGION \
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --comment "Deploy container from ECR" \
+            --comment "Deploy Publisher API" \
             --parameters commands="[
-              \"sudo yum update -y\",
-              \"sudo amazon-linux-extras install docker -y || true\",
-              \"sudo service docker start\",
-              \"sudo usermod -a -G docker ec2-user\",
               \"aws ecr get-login-password --region $AWS_REGION | sudo docker login --username AWS --password-stdin $ECR_REGISTRY\",
-              \"sudo docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG\",
-              \"sudo docker stop ec2-api-ecr-v2 || true\",
-              \"sudo docker rm ec2-api-ecr-v2 || true\",
-              \"sudo docker run -d --restart unless-stopped --name ec2-api-ecr-v2 -p 8080:8080 $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG\"
+              \"sudo docker pull $ECR_REGISTRY/publisher-api:$IMAGE_TAG\",
+              \"sudo docker stop publisher || true\",
+              \"sudo docker rm publisher || true\",
+              \"sudo docker run -d --restart unless-stopped \
+                --name publisher \
+                -p 8080:8080 \
+                -e AWS__Region=$AWS_REGION \
+                -e Sqs__QueueUrl=$SQS_URL \
+                $ECR_REGISTRY/publisher-api:$IMAGE_TAG\"
+            ]"
+
+      - name: Deploy Consumer na EC2
+        env:
+          AWS_REGION: us-east-1
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+          INSTANCE_ID: ${{ steps.cf.outputs.consumer_id }}
+          SQS_URL: ${{ steps.cf.outputs.sqs_queue_url }}
+        run: |
+          aws ssm send-command \
+            --region $AWS_REGION \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy Consumer API" \
+            --parameters commands="[
+              \"aws ecr get-login-password --region $AWS_REGION | sudo docker login --username AWS --password-stdin $ECR_REGISTRY\",
+              \"sudo docker pull $ECR_REGISTRY/consumer-api:$IMAGE_TAG\",
+              \"sudo docker stop consumer || true\",
+              \"sudo docker rm consumer || true\",
+              \"sudo docker run -d --restart unless-stopped \
+                --name consumer \
+                -e AWS__Region=$AWS_REGION \
+                -e Sqs__QueueUrl=$SQS_URL \
+                $ECR_REGISTRY/consumer-api:$IMAGE_TAG\"
             ]"
 
       - name: Dump CloudFormation events on failure
