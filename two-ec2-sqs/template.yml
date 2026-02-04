@@ -186,9 +186,13 @@ Outputs:
   ConsumerRepositoryUri:
     Value: !GetAtt ConsumerRepository.RepositoryUri
 
-  PublicIP:
+  PublicIPConsumer:
     Description: IP público da EC2
-    Value: !GetAtt ApiInstance.PublicIp
+    Value: !GetAtt ConsumerInstance.PublicIp
+
+  PublicIPPublisher:
+    Description: IP público da EC2
+    Value: !GetAtt PublisherInstance.PublicIp
 
   VpcId:
     Description: VPC criada
